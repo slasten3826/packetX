@@ -1,5 +1,17 @@
 # X12 Packet Walkthrough v0: Mouse Move
 
+## Status
+
+`Legacy walkthrough / pre-atomic reading`
+
+Документ не удаляется.
+
+Но он написан еще в старом packet-чтении,
+где packet был слишком крупным carrier-state.
+
+Нужен будет отдельный новый walkthrough,
+где mouse move будет разобран уже через packet-поток и form-assembly.
+
 ## Зачем этот документ
 
 Этот walkthrough проверяет,

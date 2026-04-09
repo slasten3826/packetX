@@ -1,5 +1,15 @@
 # X12 Packet Spec v0
 
+## Status
+
+`Legacy / requires reinterpretation`
+
+Этот документ не удаляется.
+
+Но после `X12_ATOMIC_PACKET_MODEL_V0.md`
+его надо читать не как финальную spec packet-атома,
+а как legacy spec более крупного carrier/process-body.
+
 ## Назначение
 
 Этот документ фиксирует первый технический драфт `X12 Packet`.
@@ -10,6 +20,21 @@
 
 Это техническая форма того,
 что packet в `X12` уже должен означать.
+
+## Legacy note
+
+Ниже packet еще читается слишком крупно:
+
+- как carrier целого процесса
+- как почти self-routing сущность
+- как контейнер богатого state
+
+Текущий более сильный сдвиг:
+
+- `packet` = атом
+- `form` = сборка packet'ов
+- слои и topology умные,
+  а packet тупой
 
 ## Коротко
 

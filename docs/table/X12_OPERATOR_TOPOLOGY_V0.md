@@ -1,5 +1,25 @@
 # Топология операторов X12 v0
 
+## Status
+
+`Mixed document / partially legacy`
+
+Этот документ остается важным:
+
+- topology операторов остается валидной
+- mapping по слоям остается валидным
+
+Но sections,
+где packet описан как self-routing сущность,
+теперь надо читать как legacy.
+
+После атомарного поворота:
+
+- packet тупой
+- слои и операторы умные
+- packet не выбирает путь сам
+- packet проводится через topology
+
 Источники:
 
 - `stack-core/ProcessLang/microPL.txt`
