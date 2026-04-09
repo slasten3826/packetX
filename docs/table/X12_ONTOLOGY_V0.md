@@ -274,6 +274,28 @@
 - `compositor core` = нижний `crystall`
 - финальный present = `manifest`
 
+### Новый сдвиг
+
+После packet-insight это надо читать еще жестче:
+
+- `window manager`
+- `compositor manager`
+
+это уже `legacy entities`,
+а не базовые сущности `X12`.
+
+Их функции в `X12` разложены между:
+
+- `table`
+- `crystall`
+- `manifest`
+
+Особенно важно:
+
+- `table` держит легальность и relations
+- `crystall` режет packet'ы по перекрытию и видимости
+- `manifest` только проявляет итог
+
 ## Log и PU
 
 ### `log_ledger`
