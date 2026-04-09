@@ -200,14 +200,15 @@
 - fluidity
 - `PU`
 
-### `loss_ledger`
+### `log_ledger`
 
-Бухгалтерия необратимости:
+Append-only лог packet-истории:
 
+- `DISSOLVE`
 - `CHOOSE`
 - `ENCODE`
 - `MANIFEST`
-- bridge/translation loss
+- bridge/translation
 - forced collapse points
 
 ## Где живет Packet

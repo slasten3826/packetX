@@ -76,7 +76,7 @@ Core:
 - `DISSOLVE`
   чистит stale focus, stale placement, stale visibility claims
 - `OBSERVE`
-  читает `metrics`, `loss_ledger`, conflict flags, visibility pressure
+  читает `metrics`, `log_ledger`, conflict flags, visibility pressure
 - `ENCODE`
   наполняет `state.forms`, `state.visibility_graph`, composition-ready form
 - `CHOOSE`

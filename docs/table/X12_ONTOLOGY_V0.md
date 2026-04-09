@@ -234,12 +234,13 @@
 - `compositor core` = нижний `crystall`
 - финальный present = `manifest`
 
-## Loss и PU
+## Log и PU
 
-### `loss ledger`
+### `log_ledger`
 
-Оставляем как лог необратимых packet-переходов:
+Оставляем как append-only лог packet-переходов:
 
+- `DISSOLVE`
 - `CHOOSE`
 - `ENCODE`
 - `MANIFEST`
