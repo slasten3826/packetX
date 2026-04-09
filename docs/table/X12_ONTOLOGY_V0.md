@@ -169,6 +169,46 @@
 - `MANIFEST`
   финальный present
 
+## Топология операторов
+
+В `X12` операторы — это не просто список функций.
+
+Они уже имеют topology law из `microPL`,
+а ownership по слоям уже дан в `FOUR_LEVELS_OF_ABSTRACTION`.
+
+Это значит:
+
+- packet не должен ходить по произвольной цепочке
+- packet должен двигаться по graph допустимых operator-переходов
+- этот graph уже распределен по слоям `chaos -> table -> crystall -> manifest`
+
+Текущий сжатый mapping по слоям:
+
+- `chaos`
+  `FLOW / DISSOLVE / CONNECT`
+- `table`
+  `CONNECT / DISSOLVE / OBSERVE / CHOOSE / ENCODE`
+- `crystall`
+  `CHOOSE / ENCODE / LOGIC / CYCLE / RUNTIME`
+- `manifest`
+  `MANIFEST`
+
+Практический вывод:
+
+`packet` сам выбирает следующий шаг,
+но не произвольно.
+
+Он не имеет права идти туда,
+куда ему нельзя:
+
+- по topology операторов `ProcessLang`
+- по topology уровней `chaos -> table -> crystall -> manifest`
+
+То есть `next_module` определяется не волей обработчика,
+а topology law, прочитанным из состояния packet:
+
+`next_module = packet.choose_next(pl_topology, layer_topology)`
+
 ## Visibility / Manifestation
 
 В `X12` различаются:

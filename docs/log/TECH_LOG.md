@@ -145,3 +145,90 @@
 - `manifest`
 
 и найти места, где чистая декомпозиция ломается.
+
+## Запись 0002: Найдена топология packet-движения
+
+Дата: 2026-04-09
+
+После чтения:
+
+- `stack-core/ProcessLang/microPL.txt`
+- `stack-core/FOUR_LEVELS_OF_ABSTRACTION.md`
+
+стало ясно, что topology для `packetX` не надо придумывать с нуля.
+
+### Что дал `microPL`
+
+`microPL` дал не просто список операторов,
+а graph их соседства:
+
+- `FLOW`
+- `CONNECT`
+- `DISSOLVE`
+- `OBSERVE`
+- `ENCODE`
+- `CHOOSE`
+- `LOGIC`
+- `CYCLE`
+- `RUNTIME`
+- `MANIFEST`
+
+и допустимые ближайшие переходы между ними.
+
+Вывод:
+
+packet в `X12` не должен блуждать по ad-hoc pipeline.
+Он должен двигаться по operator topology.
+
+### Что дали `FOUR_LEVELS`
+
+`FOUR_LEVELS_OF_ABSTRACTION` дал ownership этих операторов по слоям:
+
+- `chaos`
+  `FLOW / DISSOLVE / CONNECT`
+- `table`
+  `CONNECT / DISSOLVE / OBSERVE / CHOOSE / ENCODE`
+- `crystall`
+  `CHOOSE / ENCODE / LOGIC / CYCLE / RUNTIME`
+- `manifest`
+  `MANIFEST`
+
+И отдельно там жестко сказано:
+
+`packet` не отдельный мир, а тело процесса,
+в котором переходы реально происходят.
+
+### Новый вывод
+
+В `packetX` topology операторов и topology слоев —
+это одна и та же машина,
+увиденная с двух сторон.
+
+То есть:
+
+- `microPL` дает graph хода
+- `FOUR_LEVELS` дает layer ownership
+- `X12 Packet` движется по graph
+- а graph уже распределен по `chaos -> table -> crystall -> manifest`
+
+### Практический вывод
+
+Теперь `next_module` нельзя определять произвольно.
+
+И его не должен навязывать текущий модуль.
+
+`packet` сам решает,
+куда идти дальше,
+но только внутри двух topology:
+
+- topology операторов `microPL`
+- topology уровней `chaos -> table -> crystall -> manifest`
+
+То есть:
+
+- выбор делает packet
+- границы выбора задает topology law
+
+Более точная формула:
+
+`next_module = packet.choose_next(pl_topology, layer_topology)`
