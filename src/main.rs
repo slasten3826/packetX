@@ -91,6 +91,40 @@ fn main() {
         }
     }
 
+    if let Some((socket_path, client_count)) = args.windows(3).find_map(|window| {
+        if window[0] == "--x11-client-multi" {
+            let count = window[2].parse::<usize>().ok()?;
+            Some((window[1].as_str(), count))
+        } else {
+            None
+        }
+    }) {
+        let server = match X11WireServer::bind(socket_path) {
+            Ok(server) => server,
+            Err(err) => {
+                eprintln!("failed to bind X11 wire socket at {socket_path}: {err}");
+                std::process::exit(1);
+            }
+        };
+
+        let mut state = x12_server::server::ServerState::new();
+        println!(
+            "x12 x11 multi-client listener waiting on {} for {} clients",
+            server.socket_path().display(),
+            client_count
+        );
+        match server.accept_client_sessions(&mut state, client_count) {
+            Ok(outcomes) => {
+                println!("x11 multi-client outcomes: {outcomes:#?}");
+                return;
+            }
+            Err(err) => {
+                eprintln!("x11 multi-client failed at transport layer: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let requests = if let Some(name) = args
         .windows(2)
         .find_map(|window| (window[0] == "--scenario").then_some(window[1].as_str()))

@@ -76,13 +76,37 @@
 уже не только "будем делать wire ingress",
 а реально начатый кодовый слой.
 
+### 6. Session discipline усилена
+
+Теперь в `Milestone 1` уже есть:
+
+- `ClientSession`
+- sequence progression
+- XID range validation
+- duplicate XID rejection
+- `xError` без немедленного убийства всей session
+
+Это уже не просто transport loop,
+а первый настоящий server behavior.
+
+### 7. Multi-client boundary уже живой
+
+Теперь есть и следующий server-layer:
+
+- multi-client accept path
+- разные `xid_base` для разных session
+- `owner_session_id` внутри form
+- живой smoke-test с двумя реальными клиентами
+
+То есть `X12` уже умеет
+не только помнить клиента внутри одной session,
+но и различать клиентов между собой.
+
 ## Что еще не закрыто
 
 Пока еще нет:
 
-- полноценной session semantics
-- нескольких request'ов в одном client connection
-- per-client resource registry
+- полного per-client registry growth
 - real event stream
 - `MapNotify`
 - `ConfigureNotify`
@@ -91,7 +115,8 @@
 
 То есть:
 
-`Milestone 1` открыт,
+`Milestone 1` открыт
+и уже довольно глубокий,
 но не завершен.
 
 ## Что считать ближайшим практическим успехом
@@ -130,5 +155,5 @@
 Сейчас состояние такое:
 
 - `Milestone 0` — закрыт
-- `Milestone 1` — живой и начат в коде
-- следующий pressure-test — real `X11` client
+- `Milestone 1` — живой, внешний и уже multi-client
+- следующий pressure-test — первые events и двусторонний server behavior

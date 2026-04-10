@@ -43,6 +43,7 @@ impl PacketAtom {
 #[derive(Debug, Clone)]
 pub struct FormAssembly {
     pub id: u32,
+    pub owner_session_id: u64,
     pub parent: u32,
     pub x: i16,
     pub y: i16,
@@ -89,6 +90,12 @@ impl ServerState {
 
     pub fn form(&self, id: u32) -> Option<&FormAssembly> {
         self.forms.iter().find(|form| form.id == id)
+    }
+
+    pub fn forms_for_session(&self, owner_session_id: u64) -> impl Iterator<Item = &FormAssembly> {
+        self.forms
+            .iter()
+            .filter(move |form| form.owner_session_id == owner_session_id)
     }
 
     pub fn total_area(&self) -> u32 {

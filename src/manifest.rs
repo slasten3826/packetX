@@ -45,8 +45,9 @@ pub fn emit_snapshot(server: &ServerState, packet: &mut PacketAtom) -> String {
             ((form.visible_area as u64 * 1_000_000) / form.total_area as u64) as u32
         };
         out.push_str(&format!(
-            "    - id: {}\n      parent: {}\n      pos: [{}, {}]\n      size: [{}, {}]\n      mapped: {}\n      visible: {}\n      stacking: {}\n      total_area: {}\n      visible_area: {}\n      visible_ppm: {}\n      occluded_by: {}\n",
+            "    - id: {}\n      owner_session_id: {}\n      parent: {}\n      pos: [{}, {}]\n      size: [{}, {}]\n      mapped: {}\n      visible: {}\n      stacking: {}\n      total_area: {}\n      visible_area: {}\n      visible_ppm: {}\n      occluded_by: {}\n",
             form.id,
+            form.owner_session_id,
             form.parent,
             form.x,
             form.y,

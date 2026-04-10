@@ -125,6 +125,14 @@
 Клиент может использовать только ids
 из своего server-assigned range.
 
+Статус:
+
+- сделано в `v0`
+- есть session-owned `xid_base`
+- есть session-owned `xid_mask`
+- есть rejection при выходе за range
+- есть rejection duplicate XID
+
 ### 5. Только потом events
 
 После этого уже нормально добавлять:
@@ -173,3 +181,25 @@
 
 Потому что `X12` — это сервер,
 а сервер начинается с identity.
+
+## Update
+
+Часть этого next step уже реализована:
+
+- `ClientSession` появился в коде
+- multi-request session работает
+- XID discipline уже есть
+- multi-client accept loop уже есть
+- `owner_session_id` уже вписан в form
+
+То есть следующий practical шаг после этого документа
+смещается еще дальше:
+
+- per-client registry growth
+- потом events
+
+Иными словами:
+
+этот документ теперь надо читать
+как уже в основном реализованный переход
+от one-shot boundary к настоящей server identity.

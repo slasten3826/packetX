@@ -2,6 +2,15 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 
+#[derive(Debug, Clone)]
+struct SetupSuccess {
+    major: u16,
+    minor: u16,
+    vendor: String,
+    xid_base: u32,
+    xid_mask: u32,
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
@@ -35,26 +44,43 @@ fn main() {
         }
     };
 
-    println!("setup: {setup}");
-    if !setup.starts_with("success") {
-        return;
+    match &setup {
+        SetupResponse::Success(success) => println!(
+            "setup: success version={}.{} vendor={} xid_base={:#010x} xid_mask={:#010x}",
+            success.major, success.minor, success.vendor, success.xid_base, success.xid_mask
+        ),
+        SetupResponse::Failed { major, minor, reason } => {
+            println!("setup: failed version={major}.{minor} reason={reason}");
+            return;
+        }
+        SetupResponse::Unknown { status, major, minor } => {
+            println!("setup: unknown status={status} version={major}.{minor}");
+            return;
+        }
     }
 
+    let setup = match setup {
+        SetupResponse::Success(success) => success,
+        SetupResponse::Failed { .. } | SetupResponse::Unknown { .. } => unreachable!(),
+    };
+
+    let window_id = allocated_window_id(&setup);
+
     let requests = match command.as_str() {
-        "create-window" => vec![create_window_request(0x0020_004d, 1, 10, 20, 640, 480)],
-        "map-window" => vec![resource_request(8, 0x0020_004d)],
-        "unmap-window" => vec![resource_request(10, 0x0020_004d)],
+        "create-window" => vec![create_window_request(window_id, 1, 10, 20, 640, 480)],
+        "map-window" => vec![resource_request(8, window_id)],
+        "unmap-window" => vec![resource_request(10, window_id)],
         "configure-window" => vec![configure_window_request(
-            0x0020_004d,
+            window_id,
             Some(30),
             None,
             Some(800),
             None,
         )],
         "session-demo" => vec![
-            create_window_request(0x0020_004d, 1, 10, 20, 640, 480),
-            resource_request(8, 0x0020_004d),
-            configure_window_request(0x0020_004d, Some(30), None, Some(800), None),
+            create_window_request(window_id, 1, 10, 20, 640, 480),
+            resource_request(8, window_id),
+            configure_window_request(window_id, Some(30), None, Some(800), None),
         ],
         other => {
             eprintln!("unknown command: {other}");
@@ -110,7 +136,13 @@ fn setup_request() -> Vec<u8> {
     out
 }
 
-fn read_setup_response(stream: &mut UnixStream) -> std::io::Result<String> {
+enum SetupResponse {
+    Success(SetupSuccess),
+    Failed { major: u16, minor: u16, reason: String },
+    Unknown { status: u8, major: u16, minor: u16 },
+}
+
+fn read_setup_response(stream: &mut UnixStream) -> std::io::Result<SetupResponse> {
     let mut prefix = [0u8; 8];
     stream.read_exact(&mut prefix)?;
 
@@ -126,19 +158,41 @@ fn read_setup_response(stream: &mut UnixStream) -> std::io::Result<String> {
 
     match status {
         1 => {
+            let xid_base = u32::from_le_bytes([trailing[4], trailing[5], trailing[6], trailing[7]]);
+            let xid_mask =
+                u32::from_le_bytes([trailing[8], trailing[9], trailing[10], trailing[11]]);
             let vendor_len = u16::from_le_bytes([trailing[16], trailing[17]]) as usize;
             let vendor_start = 32usize;
             let vendor_end = vendor_start + vendor_len;
             let vendor = String::from_utf8_lossy(&trailing[vendor_start..vendor_end]).to_string();
-            Ok(format!("success version={major}.{minor} vendor={vendor}"))
+            Ok(SetupResponse::Success(SetupSuccess {
+                major,
+                minor,
+                vendor,
+                xid_base,
+                xid_mask,
+            }))
         }
         0 => {
             let reason_len = prefix[1] as usize;
             let reason = String::from_utf8_lossy(&trailing[..reason_len]).to_string();
-            Ok(format!("failed version={major}.{minor} reason={reason}"))
+            Ok(SetupResponse::Failed {
+                major,
+                minor,
+                reason,
+            })
         }
-        other => Ok(format!("unknown status={other} version={major}.{minor}")),
+        other => Ok(SetupResponse::Unknown {
+            status: other,
+            major,
+            minor,
+        }),
     }
+}
+
+fn allocated_window_id(setup: &SetupSuccess) -> u32 {
+    let low_bits = 0x004d & setup.xid_mask;
+    setup.xid_base | low_bits
 }
 
 fn create_window_request(id: u32, parent: u32, x: i16, y: i16, width: u16, height: u16) -> Vec<u8> {

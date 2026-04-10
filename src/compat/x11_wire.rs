@@ -1,11 +1,12 @@
-use std::fs;
 use std::collections::HashSet;
+use std::fs;
 use std::io::{self, Cursor, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::compat::x11::X11Request;
-use crate::process_request;
+use crate::process_request_for_session;
 use crate::server::ServerState;
 
 const X_PROTOCOL_MAJOR: u16 = 11;
@@ -26,6 +27,14 @@ const CONFIGURE_WINDOW_BASE_UNITS: u16 = 3;
 const CONFIGURE_MASK_ALLOWED: u16 = 0b1111;
 const CLIENT_XID_BASE: u32 = 0x0020_0000;
 const CLIENT_XID_MASK: u32 = 0x001f_ffff;
+const CLIENT_XID_STRIDE: u32 = CLIENT_XID_MASK + 1;
+
+fn xid_base_for_session(session_id: u64) -> u32 {
+    let slot = u32::try_from(session_id).expect("session id fits u32");
+    slot
+        .checked_mul(CLIENT_XID_STRIDE)
+        .expect("session xid base does not overflow")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum X11ErrorCode {
@@ -66,6 +75,7 @@ pub enum X11SetupOutcome {
 pub struct X11WireServer {
     listener: UnixListener,
     socket_path: PathBuf,
+    next_session_id: AtomicU64,
 }
 
 #[derive(Debug, Clone)]
@@ -100,21 +110,19 @@ pub enum X11SessionOutcome {
     },
     Completed {
         processed_requests: usize,
+        protocol_errors: usize,
         last_sequence: u16,
         last_snapshot: Option<String>,
-    },
-    ProtocolError {
-        sequence_number: u16,
-        error_code: X11ErrorCode,
     },
 }
 
 impl ClientSession {
     pub fn new(session_id: u64) -> Self {
+        let xid_base = xid_base_for_session(session_id);
         Self {
             session_id,
             next_sequence: 1,
-            xid_base: CLIENT_XID_BASE,
+            xid_base,
             xid_mask: CLIENT_XID_MASK,
             setup_done: false,
             owned_resources: HashSet::new(),
@@ -123,11 +131,14 @@ impl ClientSession {
 
     fn take_sequence(&mut self) -> u16 {
         let seq = self.next_sequence;
-        self.next_sequence = self.next_sequence.wrapping_add(1);
+        self.next_sequence = match self.next_sequence {
+            u16::MAX => 1,
+            current => current + 1,
+        };
         seq
     }
 
-    fn owns_xid(&self, xid: u32) -> bool {
+    pub fn owns_xid(&self, xid: u32) -> bool {
         xid != 0 && (xid & !self.xid_mask) == self.xid_base
     }
 
@@ -154,6 +165,7 @@ impl X11WireServer {
         Ok(Self {
             listener,
             socket_path,
+            next_session_id: AtomicU64::new(1),
         })
     }
 
@@ -169,12 +181,30 @@ impl X11WireServer {
 
     pub fn accept_client_session(&self, server: &mut ServerState) -> io::Result<X11SessionOutcome> {
         let (mut stream, _) = self.listener.accept()?;
-        let mut session = ClientSession::new(1);
+        let mut session = ClientSession::new(self.allocate_session_id());
         handle_client_session(&mut stream, server, &mut session)
+    }
+
+    pub fn accept_client_sessions(
+        &self,
+        server: &mut ServerState,
+        expected_clients: usize,
+    ) -> io::Result<Vec<X11SessionOutcome>> {
+        let mut outcomes = Vec::with_capacity(expected_clients);
+        for _ in 0..expected_clients {
+            let (mut stream, _) = self.listener.accept()?;
+            let mut session = ClientSession::new(self.allocate_session_id());
+            outcomes.push(handle_client_session(&mut stream, server, &mut session)?);
+        }
+        Ok(outcomes)
     }
 
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
+    }
+
+    fn allocate_session_id(&self) -> u64 {
+        self.next_session_id.fetch_add(1, Ordering::Relaxed)
     }
 }
 
@@ -190,7 +220,7 @@ pub fn handle_setup_stream(stream: &mut UnixStream) -> io::Result<X11SetupOutcom
 
     let outcome = validate_setup_request(request);
     let response = match &outcome {
-        X11SetupOutcome::Success { .. } => build_setup_success(),
+        X11SetupOutcome::Success { .. } => build_setup_success(CLIENT_XID_BASE, CLIENT_XID_MASK),
         X11SetupOutcome::Failed { reason } => {
             build_setup_failure(request.major_version, request.minor_version, reason)
         }
@@ -210,7 +240,7 @@ pub fn handle_client_once(
 
     let setup_outcome = validate_setup_request(request);
     let setup_response = match &setup_outcome {
-        X11SetupOutcome::Success { .. } => build_setup_success(),
+        X11SetupOutcome::Success { .. } => build_setup_success(CLIENT_XID_BASE, CLIENT_XID_MASK),
         X11SetupOutcome::Failed { reason } => {
             build_setup_failure(request.major_version, request.minor_version, reason)
         }
@@ -248,7 +278,7 @@ pub fn handle_setup_bytes(input: &[u8]) -> io::Result<(X11SetupOutcome, Vec<u8>)
 
     let outcome = validate_setup_request(request);
     let response = match &outcome {
-        X11SetupOutcome::Success { .. } => build_setup_success(),
+        X11SetupOutcome::Success { .. } => build_setup_success(CLIENT_XID_BASE, CLIENT_XID_MASK),
         X11SetupOutcome::Failed { reason } => {
             build_setup_failure(request.major_version, request.minor_version, reason)
         }
@@ -316,7 +346,7 @@ fn validate_setup_request(request: X11SetupRequest) -> X11SetupOutcome {
     }
 }
 
-fn build_setup_success() -> Vec<u8> {
+fn build_setup_success(xid_base: u32, xid_mask: u32) -> Vec<u8> {
     let vendor = b"packetX";
     let vendor_padded_len = padded_len(vendor.len());
 
@@ -332,8 +362,8 @@ fn build_setup_success() -> Vec<u8> {
     out.extend_from_slice(&length_units.to_le_bytes());
 
     out.extend_from_slice(&1u32.to_le_bytes());
-    out.extend_from_slice(&CLIENT_XID_BASE.to_le_bytes());
-    out.extend_from_slice(&CLIENT_XID_MASK.to_le_bytes());
+    out.extend_from_slice(&xid_base.to_le_bytes());
+    out.extend_from_slice(&xid_mask.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&(vendor.len() as u16).to_le_bytes());
     out.extend_from_slice(&u16::MAX.to_le_bytes());
@@ -403,7 +433,7 @@ pub fn process_wire_request(
 ) -> Result<String, Vec<u8>> {
     let major_opcode = input.first().copied().unwrap_or(0);
     match parse_request_bytes(input) {
-        Ok(request) => Ok(process_request(server, &request)),
+        Ok(request) => Ok(process_request_for_session(server, 0, &request)),
         Err(error) => Err(build_protocol_error(
             error.code,
             sequence_number,
@@ -433,7 +463,7 @@ pub fn process_session_wire_request(
             }
 
             session.track_request(&request);
-            let snapshot = process_request(server, &request);
+            let snapshot = process_request_for_session(server, session.session_id, &request);
             Ok((sequence_number, snapshot))
         }
         Err(error) => Err(build_protocol_error(
@@ -455,7 +485,7 @@ pub fn handle_client_session(
 
     let setup_outcome = validate_setup_request(request);
     let setup_response = match &setup_outcome {
-        X11SetupOutcome::Success { .. } => build_setup_success(),
+        X11SetupOutcome::Success { .. } => build_setup_success(session.xid_base, session.xid_mask),
         X11SetupOutcome::Failed { reason } => {
             build_setup_failure(request.major_version, request.minor_version, reason)
         }
@@ -468,6 +498,7 @@ pub fn handle_client_session(
         X11SetupOutcome::Success { .. } => {
             session.setup_done = true;
             let mut processed_requests = 0usize;
+            let mut protocol_errors = 0usize;
             let mut last_sequence = 0u16;
             let mut last_snapshot = None;
 
@@ -485,20 +516,17 @@ pub fn handle_client_session(
                         last_snapshot = Some(snapshot);
                     }
                     Err(error) => {
-                        let error_code = decode_error_code(error[1]);
-                        let sequence_number = u16::from_le_bytes([error[2], error[3]]);
+                        protocol_errors += 1;
+                        last_sequence = u16::from_le_bytes([error[2], error[3]]);
                         stream.write_all(&error)?;
                         stream.flush()?;
-                        return Ok(X11SessionOutcome::ProtocolError {
-                            sequence_number,
-                            error_code,
-                        });
                     }
                 }
             }
 
             Ok(X11SessionOutcome::Completed {
                 processed_requests,
+                protocol_errors,
                 last_sequence,
                 last_snapshot,
             })
@@ -784,6 +812,12 @@ fn validate_session_request(
                 return Err(protocol_error(
                     X11ErrorCode::BadValue,
                     format!("window id {} is outside the session xid space", id),
+                ));
+            }
+            if session.owned_resources.contains(id) {
+                return Err(protocol_error(
+                    X11ErrorCode::BadValue,
+                    format!("window id {} is already allocated in this session", id),
                 ));
             }
             if !session.can_reference(*parent) {

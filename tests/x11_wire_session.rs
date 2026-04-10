@@ -1,6 +1,6 @@
-use x12_server::compat::x11_wire::{
-    process_session_wire_request, ClientSession, X11ErrorCode,
-};
+use x12_server::compat::x11::X11Request;
+use x12_server::compat::x11_wire::{process_session_wire_request, ClientSession, X11ErrorCode};
+use x12_server::process_request_for_session;
 use x12_server::server::ServerState;
 
 fn create_window_request(id: u32, parent: u32, x: i16, y: i16, width: u16, height: u16) -> Vec<u8> {
@@ -117,4 +117,106 @@ fn session_rejects_reference_to_unowned_window() {
 
     assert_eq!(error[1], X11ErrorCode::BadWindow as u8);
     assert_eq!(u16::from_le_bytes([error[2], error[3]]), 1);
+}
+
+#[test]
+fn session_rejects_duplicate_xid_allocation() {
+    let mut server = ServerState::new();
+    let mut session = ClientSession::new(1);
+    let request = create_window_request(0x0020_004d, 1, 10, 20, 640, 480);
+
+    let _ = process_session_wire_request(&mut server, &mut session, &request)
+        .expect("first create should succeed");
+    let error = process_session_wire_request(&mut server, &mut session, &request)
+        .expect_err("duplicate xid should fail");
+
+    assert_eq!(error[1], X11ErrorCode::BadValue as u8);
+    assert_eq!(u16::from_le_bytes([error[2], error[3]]), 2);
+}
+
+#[test]
+fn session_continues_after_protocol_error() {
+    let mut server = ServerState::new();
+    let mut session = ClientSession::new(1);
+
+    let bad = process_session_wire_request(&mut server, &mut session, &resource_request(8, 0x0020_004d))
+        .expect_err("first map without ownership should fail");
+    let (seq_create, _) = process_session_wire_request(
+        &mut server,
+        &mut session,
+        &create_window_request(0x0020_004d, 1, 10, 20, 640, 480),
+    )
+    .expect("session should continue after error");
+    let (seq_map, snapshot) = process_session_wire_request(
+        &mut server,
+        &mut session,
+        &resource_request(8, 0x0020_004d),
+    )
+    .expect("map should succeed after create");
+
+    assert_eq!(u16::from_le_bytes([bad[2], bad[3]]), 1);
+    assert_eq!(seq_create, 2);
+    assert_eq!(seq_map, 3);
+    assert!(snapshot.contains("forms_mapped: 1"));
+}
+
+#[test]
+fn different_sessions_get_distinct_xid_bases() {
+    let first = ClientSession::new(1);
+    let second = ClientSession::new(2);
+
+    assert_ne!(first.xid_base, second.xid_base);
+    assert_eq!(first.xid_mask, second.xid_mask);
+    assert!(first.owns_xid(first.xid_base | 0x004d));
+    assert!(second.owns_xid(second.xid_base | 0x004d));
+    assert!(!first.owns_xid(second.xid_base | 0x004d));
+}
+
+#[test]
+fn server_records_form_owner_session() {
+    let mut server = ServerState::new();
+
+    let _ = process_request_for_session(
+        &mut server,
+        7,
+        &X11Request::CreateWindow {
+            id: 0x00e0_004d,
+            parent: 1,
+            x: 10,
+            y: 20,
+            width: 320,
+            height: 240,
+        },
+    );
+
+    let form = server.form(0x00e0_004d).expect("form should exist");
+    assert_eq!(form.owner_session_id, 7);
+    assert_eq!(server.forms_for_session(7).count(), 1);
+}
+
+#[test]
+fn separate_sessions_can_allocate_same_low_bits_without_collision() {
+    let mut server = ServerState::new();
+    let mut first = ClientSession::new(1);
+    let mut second = ClientSession::new(2);
+
+    let first_id = first.xid_base | 0x004d;
+    let second_id = second.xid_base | 0x004d;
+
+    process_session_wire_request(
+        &mut server,
+        &mut first,
+        &create_window_request(first_id, 1, 10, 20, 320, 240),
+    )
+    .expect("first client should allocate its xid");
+    process_session_wire_request(
+        &mut server,
+        &mut second,
+        &create_window_request(second_id, 1, 30, 40, 320, 240),
+    )
+    .expect("second client should allocate its xid");
+
+    assert_eq!(server.forms.len(), 2);
+    assert_eq!(server.form(first_id).expect("first form").owner_session_id, 1);
+    assert_eq!(server.form(second_id).expect("second form").owner_session_id, 2);
 }
