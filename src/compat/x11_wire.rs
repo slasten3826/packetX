@@ -29,13 +29,6 @@ const CLIENT_XID_BASE: u32 = 0x0020_0000;
 const CLIENT_XID_MASK: u32 = 0x001f_ffff;
 const CLIENT_XID_STRIDE: u32 = CLIENT_XID_MASK + 1;
 
-fn xid_base_for_session(session_id: u64) -> u32 {
-    let slot = u32::try_from(session_id).expect("session id fits u32");
-    slot
-        .checked_mul(CLIENT_XID_STRIDE)
-        .expect("session xid base does not overflow")
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum X11ErrorCode {
     BadRequest = 1,
@@ -117,16 +110,22 @@ pub enum X11SessionOutcome {
 }
 
 impl ClientSession {
-    pub fn new(session_id: u64) -> Self {
-        let xid_base = xid_base_for_session(session_id);
-        Self {
+    pub fn try_new(session_id: u64) -> Option<Self> {
+        let xid_base = u32::try_from(session_id)
+            .ok()
+            .and_then(|slot| slot.checked_mul(CLIENT_XID_STRIDE))?;
+        Some(Self {
             session_id,
             next_sequence: 1,
             xid_base,
             xid_mask: CLIENT_XID_MASK,
             setup_done: false,
             owned_resources: HashSet::new(),
-        }
+        })
+    }
+
+    pub fn new(session_id: u64) -> Self {
+        Self::try_new(session_id).expect("session xid space must exist")
     }
 
     fn take_sequence(&mut self) -> u16 {
@@ -181,7 +180,7 @@ impl X11WireServer {
 
     pub fn accept_client_session(&self, server: &mut ServerState) -> io::Result<X11SessionOutcome> {
         let (mut stream, _) = self.listener.accept()?;
-        let mut session = ClientSession::new(self.allocate_session_id());
+        let mut session = self.allocate_session()?;
         handle_client_session(&mut stream, server, &mut session)
     }
 
@@ -193,7 +192,7 @@ impl X11WireServer {
         let mut outcomes = Vec::with_capacity(expected_clients);
         for _ in 0..expected_clients {
             let (mut stream, _) = self.listener.accept()?;
-            let mut session = ClientSession::new(self.allocate_session_id());
+            let mut session = self.allocate_session()?;
             outcomes.push(handle_client_session(&mut stream, server, &mut session)?);
         }
         Ok(outcomes)
@@ -205,6 +204,16 @@ impl X11WireServer {
 
     fn allocate_session_id(&self) -> u64 {
         self.next_session_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn allocate_session(&self) -> io::Result<ClientSession> {
+        let session_id = self.allocate_session_id();
+        ClientSession::try_new(session_id).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("x11 session xid space exhausted at session_id={session_id}"),
+            )
+        })
     }
 }
 
@@ -480,6 +489,13 @@ pub fn handle_client_session(
     server: &mut ServerState,
     session: &mut ClientSession,
 ) -> io::Result<X11SessionOutcome> {
+    if !server.register_client(session.session_id, session.xid_base, session.xid_mask) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("duplicate session id {}", session.session_id),
+        ));
+    }
+
     let request = read_setup_request(stream)?;
     discard_auth_payload(stream, request.auth_proto_len, request.auth_string_len)?;
 
@@ -494,9 +510,13 @@ pub fn handle_client_session(
     stream.flush()?;
 
     match setup_outcome {
-        X11SetupOutcome::Failed { reason } => Ok(X11SessionOutcome::SetupFailed { reason }),
+        X11SetupOutcome::Failed { reason } => {
+            server.cleanup_session(session.session_id);
+            Ok(X11SessionOutcome::SetupFailed { reason })
+        }
         X11SetupOutcome::Success { .. } => {
             session.setup_done = true;
+            server.mark_client_setup_done(session.session_id);
             let mut processed_requests = 0usize;
             let mut protocol_errors = 0usize;
             let mut last_sequence = 0u16;
@@ -524,12 +544,14 @@ pub fn handle_client_session(
                 }
             }
 
-            Ok(X11SessionOutcome::Completed {
+            let outcome = X11SessionOutcome::Completed {
                 processed_requests,
                 protocol_errors,
                 last_sequence,
                 last_snapshot,
-            })
+            };
+            server.cleanup_session(session.session_id);
+            Ok(outcome)
         }
     }
 }

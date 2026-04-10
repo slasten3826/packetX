@@ -102,6 +102,18 @@
 не только помнить клиента внутри одной session,
 но и различать клиентов между собой.
 
+### 8. Server core cleanup уже живой
+
+Теперь сервер еще и умеет:
+
+- регистрировать клиента во внутреннем registry
+- помечать `setup_done`
+- удалять client-owned forms при disconnect
+- не падать panic'ом при исчерпании xid-space в runtime path
+
+Это уже не только client identity,
+но и server lifecycle discipline.
+
 ## Что еще не закрыто
 
 Пока еще нет:

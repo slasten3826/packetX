@@ -220,3 +220,50 @@ fn separate_sessions_can_allocate_same_low_bits_without_collision() {
     assert_eq!(server.form(first_id).expect("first form").owner_session_id, 1);
     assert_eq!(server.form(second_id).expect("second form").owner_session_id, 2);
 }
+
+#[test]
+fn client_session_try_new_returns_none_when_xid_space_is_exhausted() {
+    assert!(ClientSession::try_new(2047).is_some());
+    assert!(ClientSession::try_new(2048).is_none());
+}
+
+#[test]
+fn cleanup_session_removes_client_and_owned_forms() {
+    let mut server = ServerState::new();
+    assert!(server.register_client(11, 0x0160_0000, 0x001f_ffff));
+    assert!(server.register_client(12, 0x0180_0000, 0x001f_ffff));
+
+    let _ = process_request_for_session(
+        &mut server,
+        11,
+        &X11Request::CreateWindow {
+            id: 0x0160_004d,
+            parent: 1,
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+        },
+    );
+    let _ = process_request_for_session(
+        &mut server,
+        12,
+        &X11Request::CreateWindow {
+            id: 0x0180_004d,
+            parent: 1,
+            x: 10,
+            y: 10,
+            width: 120,
+            height: 120,
+        },
+    );
+
+    server.cleanup_session(11);
+
+    assert!(server.client(11).is_none());
+    assert!(server.client(12).is_some());
+    assert!(server.form(0x0160_004d).is_none());
+    assert!(server.form(0x0180_004d).is_some());
+    assert_eq!(server.forms.len(), 1);
+    assert_eq!(server.form(0x0180_004d).expect("remaining form").stacking_rank, 0);
+}

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Copy)]
 pub enum PacketOrigin {
     X11Client,
@@ -57,11 +59,20 @@ pub struct FormAssembly {
     pub visible_area: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerClient {
+    pub session_id: u64,
+    pub xid_base: u32,
+    pub xid_mask: u32,
+    pub setup_done: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct ServerState {
     next_tick: u64,
     next_packet: u64,
     pub forms: Vec<FormAssembly>,
+    pub clients: HashMap<u64, ServerClient>,
 }
 
 impl ServerState {
@@ -70,6 +81,7 @@ impl ServerState {
             next_tick: 0,
             next_packet: 1,
             forms: Vec::new(),
+            clients: HashMap::new(),
         }
     }
 
@@ -96,6 +108,38 @@ impl ServerState {
         self.forms
             .iter()
             .filter(move |form| form.owner_session_id == owner_session_id)
+    }
+
+    pub fn register_client(&mut self, session_id: u64, xid_base: u32, xid_mask: u32) -> bool {
+        self.clients
+            .insert(
+                session_id,
+                ServerClient {
+                    session_id,
+                    xid_base,
+                    xid_mask,
+                    setup_done: false,
+                },
+            )
+            .is_none()
+    }
+
+    pub fn mark_client_setup_done(&mut self, session_id: u64) {
+        if let Some(client) = self.clients.get_mut(&session_id) {
+            client.setup_done = true;
+        }
+    }
+
+    pub fn client(&self, session_id: u64) -> Option<&ServerClient> {
+        self.clients.get(&session_id)
+    }
+
+    pub fn cleanup_session(&mut self, session_id: u64) {
+        self.clients.remove(&session_id);
+        self.forms.retain(|form| form.owner_session_id != session_id);
+        for (stacking_rank, form) in self.forms.iter_mut().enumerate() {
+            form.stacking_rank = stacking_rank;
+        }
     }
 
     pub fn total_area(&self) -> u32 {
