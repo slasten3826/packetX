@@ -114,6 +114,18 @@
 Это уже не только client identity,
 но и server lifecycle discipline.
 
+### 9. Server state согласован жестче
+
+Теперь:
+
+- `setup_done` живет как server-side truth
+- cleanup привязан к lifecycle guard
+- часть latent inconsistency между transient session
+  и server registry убрана
+
+Это уже не расширение feature surface,
+а финальная доводка server discipline для `v0`.
+
 ## Что еще не закрыто
 
 Пока еще нет:

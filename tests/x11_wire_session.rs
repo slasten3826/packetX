@@ -267,3 +267,13 @@ fn cleanup_session_removes_client_and_owned_forms() {
     assert_eq!(server.forms.len(), 1);
     assert_eq!(server.form(0x0180_004d).expect("remaining form").stacking_rank, 0);
 }
+
+#[test]
+fn mark_client_setup_done_is_strict_about_missing_client() {
+    let mut server = ServerState::new();
+
+    assert!(!server.mark_client_setup_done(99));
+    assert!(server.register_client(99, 0x0c60_0000, 0x001f_ffff));
+    assert!(server.mark_client_setup_done(99));
+    assert!(server.client(99).expect("client should exist").setup_done);
+}

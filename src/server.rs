@@ -124,9 +124,12 @@ impl ServerState {
             .is_none()
     }
 
-    pub fn mark_client_setup_done(&mut self, session_id: u64) {
+    pub fn mark_client_setup_done(&mut self, session_id: u64) -> bool {
         if let Some(client) = self.clients.get_mut(&session_id) {
             client.setup_done = true;
+            true
+        } else {
+            false
         }
     }
 

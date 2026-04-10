@@ -77,7 +77,6 @@ pub struct ClientSession {
     pub next_sequence: u16,
     pub xid_base: u32,
     pub xid_mask: u32,
-    pub setup_done: bool,
     owned_resources: HashSet<u32>,
 }
 
@@ -119,7 +118,6 @@ impl ClientSession {
             next_sequence: 1,
             xid_base,
             xid_mask: CLIENT_XID_MASK,
-            setup_done: false,
             owned_resources: HashSet::new(),
         })
     }
@@ -496,6 +494,22 @@ pub fn handle_client_session(
         ));
     }
 
+    struct SessionCleanupGuard<'a> {
+        server: &'a mut ServerState,
+        session_id: u64,
+    }
+
+    impl Drop for SessionCleanupGuard<'_> {
+        fn drop(&mut self) {
+            self.server.cleanup_session(self.session_id);
+        }
+    }
+
+    let guard = SessionCleanupGuard {
+        server,
+        session_id: session.session_id,
+    };
+
     let request = read_setup_request(stream)?;
     discard_auth_payload(stream, request.auth_proto_len, request.auth_string_len)?;
 
@@ -510,13 +524,14 @@ pub fn handle_client_session(
     stream.flush()?;
 
     match setup_outcome {
-        X11SetupOutcome::Failed { reason } => {
-            server.cleanup_session(session.session_id);
-            Ok(X11SessionOutcome::SetupFailed { reason })
-        }
+        X11SetupOutcome::Failed { reason } => Ok(X11SessionOutcome::SetupFailed { reason }),
         X11SetupOutcome::Success { .. } => {
-            session.setup_done = true;
-            server.mark_client_setup_done(session.session_id);
+            if !guard.server.mark_client_setup_done(session.session_id) {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("session {} disappeared before setup completion", session.session_id),
+                ));
+            }
             let mut processed_requests = 0usize;
             let mut protocol_errors = 0usize;
             let mut last_sequence = 0u16;
@@ -529,7 +544,7 @@ pub fn handle_client_session(
                     Err(err) => return Err(err),
                 };
 
-                match process_session_wire_request(server, session, &wire_request) {
+                match process_session_wire_request(guard.server, session, &wire_request) {
                     Ok((sequence, snapshot)) => {
                         processed_requests += 1;
                         last_sequence = sequence;
@@ -544,14 +559,12 @@ pub fn handle_client_session(
                 }
             }
 
-            let outcome = X11SessionOutcome::Completed {
+            Ok(X11SessionOutcome::Completed {
                 processed_requests,
                 protocol_errors,
                 last_sequence,
                 last_snapshot,
-            };
-            server.cleanup_session(session.session_id);
-            Ok(outcome)
+            })
         }
     }
 }
