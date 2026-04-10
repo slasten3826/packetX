@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
+use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
         eprintln!(
-            "usage: x11_probe <socket-path> <create-window|map-window|unmap-window|configure-window>"
+            "usage: x11_probe <socket-path> <create-window|map-window|unmap-window|configure-window|session-demo>"
         );
         std::process::exit(2);
     }
@@ -39,19 +40,37 @@ fn main() {
         return;
     }
 
-    let request = match command.as_str() {
-        "create-window" => create_window_request(77, 1, 10, 20, 640, 480),
-        "map-window" => resource_request(8, 77),
-        "unmap-window" => resource_request(10, 77),
-        "configure-window" => configure_window_request(77, Some(30), None, Some(800), None),
+    let requests = match command.as_str() {
+        "create-window" => vec![create_window_request(0x0020_004d, 1, 10, 20, 640, 480)],
+        "map-window" => vec![resource_request(8, 0x0020_004d)],
+        "unmap-window" => vec![resource_request(10, 0x0020_004d)],
+        "configure-window" => vec![configure_window_request(
+            0x0020_004d,
+            Some(30),
+            None,
+            Some(800),
+            None,
+        )],
+        "session-demo" => vec![
+            create_window_request(0x0020_004d, 1, 10, 20, 640, 480),
+            resource_request(8, 0x0020_004d),
+            configure_window_request(0x0020_004d, Some(30), None, Some(800), None),
+        ],
         other => {
             eprintln!("unknown command: {other}");
             std::process::exit(2);
         }
     };
 
-    if let Err(err) = stream.write_all(&request) {
-        eprintln!("failed to send request: {err}");
+    for request in requests {
+        if let Err(err) = stream.write_all(&request) {
+            eprintln!("failed to send request: {err}");
+            std::process::exit(1);
+        }
+    }
+
+    if let Err(err) = stream.shutdown(Shutdown::Write) {
+        eprintln!("failed to close request stream: {err}");
         std::process::exit(1);
     }
 
@@ -70,7 +89,7 @@ fn main() {
             }
         }
         Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-            println!("request sent; server closed connection without wire error");
+            println!("request sequence sent; server closed connection without wire error");
         }
         Err(err) => {
             eprintln!("failed to read post-request state: {err}");

@@ -1,4 +1,5 @@
 use std::fs;
+use std::collections::HashSet;
 use std::io::{self, Cursor, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -23,6 +24,8 @@ const CREATE_WINDOW_LENGTH_UNITS: u16 = 8;
 const RESOURCE_REQ_LENGTH_UNITS: u16 = 2;
 const CONFIGURE_WINDOW_BASE_UNITS: u16 = 3;
 const CONFIGURE_MASK_ALLOWED: u16 = 0b1111;
+const CLIENT_XID_BASE: u32 = 0x0020_0000;
+const CLIENT_XID_MASK: u32 = 0x001f_ffff;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum X11ErrorCode {
@@ -65,6 +68,16 @@ pub struct X11WireServer {
     socket_path: PathBuf,
 }
 
+#[derive(Debug, Clone)]
+pub struct ClientSession {
+    pub session_id: u64,
+    pub next_sequence: u16,
+    pub xid_base: u32,
+    pub xid_mask: u32,
+    pub setup_done: bool,
+    owned_resources: HashSet<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum X11ClientOnceOutcome {
     SetupFailed {
@@ -78,6 +91,55 @@ pub enum X11ClientOnceOutcome {
         sequence_number: u16,
         error_code: X11ErrorCode,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum X11SessionOutcome {
+    SetupFailed {
+        reason: String,
+    },
+    Completed {
+        processed_requests: usize,
+        last_sequence: u16,
+        last_snapshot: Option<String>,
+    },
+    ProtocolError {
+        sequence_number: u16,
+        error_code: X11ErrorCode,
+    },
+}
+
+impl ClientSession {
+    pub fn new(session_id: u64) -> Self {
+        Self {
+            session_id,
+            next_sequence: 1,
+            xid_base: CLIENT_XID_BASE,
+            xid_mask: CLIENT_XID_MASK,
+            setup_done: false,
+            owned_resources: HashSet::new(),
+        }
+    }
+
+    fn take_sequence(&mut self) -> u16 {
+        let seq = self.next_sequence;
+        self.next_sequence = self.next_sequence.wrapping_add(1);
+        seq
+    }
+
+    fn owns_xid(&self, xid: u32) -> bool {
+        xid != 0 && (xid & !self.xid_mask) == self.xid_base
+    }
+
+    fn track_request(&mut self, request: &X11Request) {
+        if let X11Request::CreateWindow { id, .. } = request {
+            self.owned_resources.insert(*id);
+        }
+    }
+
+    fn can_reference(&self, xid: u32) -> bool {
+        xid == SYNTHETIC_ROOT_WINDOW || self.owned_resources.contains(&xid)
+    }
 }
 
 impl X11WireServer {
@@ -103,6 +165,12 @@ impl X11WireServer {
     pub fn accept_client_once(&self, server: &mut ServerState) -> io::Result<X11ClientOnceOutcome> {
         let (mut stream, _) = self.listener.accept()?;
         handle_client_once(&mut stream, server)
+    }
+
+    pub fn accept_client_session(&self, server: &mut ServerState) -> io::Result<X11SessionOutcome> {
+        let (mut stream, _) = self.listener.accept()?;
+        let mut session = ClientSession::new(1);
+        handle_client_session(&mut stream, server, &mut session)
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -244,7 +312,7 @@ fn validate_setup_request(request: X11SetupRequest) -> X11SetupOutcome {
 
     X11SetupOutcome::Success {
         vendor: "packetX",
-        root_window: 1,
+        root_window: SYNTHETIC_ROOT_WINDOW,
     }
 }
 
@@ -264,8 +332,8 @@ fn build_setup_success() -> Vec<u8> {
     out.extend_from_slice(&length_units.to_le_bytes());
 
     out.extend_from_slice(&1u32.to_le_bytes());
-    out.extend_from_slice(&0x0020_0000u32.to_le_bytes());
-    out.extend_from_slice(&0x001f_ffffu32.to_le_bytes());
+    out.extend_from_slice(&CLIENT_XID_BASE.to_le_bytes());
+    out.extend_from_slice(&CLIENT_XID_MASK.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&(vendor.len() as u16).to_le_bytes());
     out.extend_from_slice(&u16::MAX.to_le_bytes());
@@ -342,6 +410,99 @@ pub fn process_wire_request(
             major_opcode,
             0,
         )),
+    }
+}
+
+pub fn process_session_wire_request(
+    server: &mut ServerState,
+    session: &mut ClientSession,
+    input: &[u8],
+) -> Result<(u16, String), Vec<u8>> {
+    let sequence_number = session.take_sequence();
+    let major_opcode = input.first().copied().unwrap_or(0);
+
+    match parse_request_bytes(input) {
+        Ok(request) => {
+            if let Err(error) = validate_session_request(session, &request) {
+                return Err(build_protocol_error(
+                    error.code,
+                    sequence_number,
+                    major_opcode,
+                    0,
+                ));
+            }
+
+            session.track_request(&request);
+            let snapshot = process_request(server, &request);
+            Ok((sequence_number, snapshot))
+        }
+        Err(error) => Err(build_protocol_error(
+            error.code,
+            sequence_number,
+            major_opcode,
+            0,
+        )),
+    }
+}
+
+pub fn handle_client_session(
+    stream: &mut UnixStream,
+    server: &mut ServerState,
+    session: &mut ClientSession,
+) -> io::Result<X11SessionOutcome> {
+    let request = read_setup_request(stream)?;
+    discard_auth_payload(stream, request.auth_proto_len, request.auth_string_len)?;
+
+    let setup_outcome = validate_setup_request(request);
+    let setup_response = match &setup_outcome {
+        X11SetupOutcome::Success { .. } => build_setup_success(),
+        X11SetupOutcome::Failed { reason } => {
+            build_setup_failure(request.major_version, request.minor_version, reason)
+        }
+    };
+    stream.write_all(&setup_response)?;
+    stream.flush()?;
+
+    match setup_outcome {
+        X11SetupOutcome::Failed { reason } => Ok(X11SessionOutcome::SetupFailed { reason }),
+        X11SetupOutcome::Success { .. } => {
+            session.setup_done = true;
+            let mut processed_requests = 0usize;
+            let mut last_sequence = 0u16;
+            let mut last_snapshot = None;
+
+            loop {
+                let wire_request = match read_wire_request(stream) {
+                    Ok(request) => request,
+                    Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+                    Err(err) => return Err(err),
+                };
+
+                match process_session_wire_request(server, session, &wire_request) {
+                    Ok((sequence, snapshot)) => {
+                        processed_requests += 1;
+                        last_sequence = sequence;
+                        last_snapshot = Some(snapshot);
+                    }
+                    Err(error) => {
+                        let error_code = decode_error_code(error[1]);
+                        let sequence_number = u16::from_le_bytes([error[2], error[3]]);
+                        stream.write_all(&error)?;
+                        stream.flush()?;
+                        return Ok(X11SessionOutcome::ProtocolError {
+                            sequence_number,
+                            error_code,
+                        });
+                    }
+                }
+            }
+
+            Ok(X11SessionOutcome::Completed {
+                processed_requests,
+                last_sequence,
+                last_snapshot,
+            })
+        }
     }
 }
 
@@ -611,6 +772,40 @@ fn protocol_error(code: X11ErrorCode, detail: impl Into<String>) -> X11ProtocolE
         code,
         detail: detail.into(),
     }
+}
+
+fn validate_session_request(
+    session: &ClientSession,
+    request: &X11Request,
+) -> Result<(), X11ProtocolError> {
+    match request {
+        X11Request::CreateWindow { id, parent, .. } => {
+            if !session.owns_xid(*id) {
+                return Err(protocol_error(
+                    X11ErrorCode::BadValue,
+                    format!("window id {} is outside the session xid space", id),
+                ));
+            }
+            if !session.can_reference(*parent) {
+                return Err(protocol_error(
+                    X11ErrorCode::BadWindow,
+                    format!("parent id {} is not owned by this session", parent),
+                ));
+            }
+        }
+        X11Request::MapWindow { id }
+        | X11Request::UnmapWindow { id }
+        | X11Request::ConfigureWindow { id, .. } => {
+            if !session.can_reference(*id) {
+                return Err(protocol_error(
+                    X11ErrorCode::BadWindow,
+                    format!("window id {} is not owned by this session", id),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn build_protocol_error(
