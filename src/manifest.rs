@@ -13,7 +13,7 @@ pub fn emit_snapshot(server: &ServerState, packet: &mut PacketAtom) -> String {
     }
 
     let mut out = String::new();
-    let total_area = server.total_area();
+    let total_area = server.mapped_total_area();
     let visible_area = server.visible_area();
     let hidden_area = total_area.saturating_sub(visible_area);
     let pressure_ppm = if total_area == 0 {

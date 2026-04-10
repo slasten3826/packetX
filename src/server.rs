@@ -87,8 +87,20 @@ impl ServerState {
         self.forms.iter_mut().find(|form| form.id == id)
     }
 
+    pub fn form(&self, id: u32) -> Option<&FormAssembly> {
+        self.forms.iter().find(|form| form.id == id)
+    }
+
     pub fn total_area(&self) -> u32 {
         self.forms.iter().map(|form| form.total_area).sum()
+    }
+
+    pub fn mapped_total_area(&self) -> u32 {
+        self.forms
+            .iter()
+            .filter(|form| form.mapped)
+            .map(|form| form.total_area)
+            .sum()
     }
 
     pub fn visible_area(&self) -> u32 {

@@ -31,6 +31,31 @@ impl X11Bridge {
     }
 
     pub fn bootstrap_sequence(&self) -> Vec<X11Request> {
+        scenarios::bootstrap_sequence()
+    }
+}
+
+pub mod scenarios {
+    use super::X11Request;
+
+    pub const NAMES: &[&str] = &[
+        "bootstrap",
+        "full-occlusion",
+        "partial-overlap",
+        "unmap-restore",
+    ];
+
+    pub fn named(name: &str) -> Option<Vec<X11Request>> {
+        match name {
+            "bootstrap" => Some(bootstrap_sequence()),
+            "full-occlusion" => Some(full_occlusion_sequence()),
+            "partial-overlap" => Some(partial_overlap_sequence()),
+            "unmap-restore" => Some(unmap_restore_sequence()),
+            _ => None,
+        }
+    }
+
+    pub fn bootstrap_sequence() -> Vec<X11Request> {
         vec![
             X11Request::CreateWindow {
                 id: 1,
@@ -68,5 +93,57 @@ impl X11Bridge {
             X11Request::MapWindow { id: 3 },
             X11Request::UnmapWindow { id: 2 },
         ]
+    }
+
+    pub fn full_occlusion_sequence() -> Vec<X11Request> {
+        vec![
+            X11Request::CreateWindow {
+                id: 1,
+                parent: 0,
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            X11Request::MapWindow { id: 1 },
+            X11Request::CreateWindow {
+                id: 2,
+                parent: 0,
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            X11Request::MapWindow { id: 2 },
+        ]
+    }
+
+    pub fn partial_overlap_sequence() -> Vec<X11Request> {
+        vec![
+            X11Request::CreateWindow {
+                id: 1,
+                parent: 0,
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            X11Request::MapWindow { id: 1 },
+            X11Request::CreateWindow {
+                id: 2,
+                parent: 0,
+                x: 50,
+                y: 0,
+                width: 50,
+                height: 100,
+            },
+            X11Request::MapWindow { id: 2 },
+        ]
+    }
+
+    pub fn unmap_restore_sequence() -> Vec<X11Request> {
+        let mut requests = full_occlusion_sequence();
+        requests.push(X11Request::UnmapWindow { id: 2 });
+        requests
     }
 }
