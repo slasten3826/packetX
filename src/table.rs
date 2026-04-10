@@ -51,11 +51,19 @@ pub fn apply_request(server: &mut ServerState, packet: &mut PacketAtom, request:
             height,
         } => {
             if let Some(form) = server.form_mut(*id) {
-                form.x = *x;
-                form.y = *y;
-                form.width = *width;
-                form.height = *height;
-                form.total_area = (*width as u32) * (*height as u32);
+                if let Some(x) = x {
+                    form.x = *x;
+                }
+                if let Some(y) = y {
+                    form.y = *y;
+                }
+                if let Some(width) = width {
+                    form.width = *width;
+                }
+                if let Some(height) = height {
+                    form.height = *height;
+                }
+                form.total_area = (form.width as u32) * (form.height as u32);
                 packet
                     .log_ledger
                     .push(format!("table: configure form id={id}"));

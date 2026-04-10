@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum X11Request {
     CreateWindow {
         id: u32,
@@ -13,10 +13,10 @@ pub enum X11Request {
     },
     ConfigureWindow {
         id: u32,
-        x: i16,
-        y: i16,
-        width: u16,
-        height: u16,
+        x: Option<i16>,
+        y: Option<i16>,
+        width: Option<u16>,
+        height: Option<u16>,
     },
     UnmapWindow {
         id: u32,
@@ -77,10 +77,10 @@ pub mod scenarios {
             X11Request::MapWindow { id: 2 },
             X11Request::ConfigureWindow {
                 id: 2,
-                x: 60,
-                y: 50,
-                width: 320,
-                height: 240,
+                x: Some(60),
+                y: Some(50),
+                width: Some(320),
+                height: Some(240),
             },
             X11Request::CreateWindow {
                 id: 3,
