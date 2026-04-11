@@ -95,6 +95,61 @@ fn upper_form_overwrites_lower_in_overlap_region() {
 }
 
 #[test]
+fn fully_occluded_form_is_not_composited_into_manifest_buffer() {
+    let mut server = ServerState::new();
+
+    run(
+        &mut server,
+        &X11Request::CreateWindow {
+            id: 21,
+            parent: 0,
+            x: 0,
+            y: 0,
+            width: 6,
+            height: 6,
+        },
+    );
+    run(&mut server, &X11Request::MapWindow { id: 21 });
+    run(
+        &mut server,
+        &X11Request::CreateWindow {
+            id: 22,
+            parent: 0,
+            x: 0,
+            y: 0,
+            width: 6,
+            height: 6,
+        },
+    );
+    run(&mut server, &X11Request::MapWindow { id: 22 });
+
+    let buffer = render_manifest_buffer(&server, 16, 16);
+    let overlap = buffer.get_pixel(2, 2).expect("overlap pixel should exist");
+    let upper_only = render_manifest_buffer(&{
+        let mut isolated = ServerState::new();
+        run(
+            &mut isolated,
+            &X11Request::CreateWindow {
+                id: 22,
+                parent: 0,
+                x: 0,
+                y: 0,
+                width: 6,
+                height: 6,
+            },
+        );
+        run(&mut isolated, &X11Request::MapWindow { id: 22 });
+        isolated
+    }, 16, 16)
+    .get_pixel(2, 2)
+    .expect("upper-only pixel should exist");
+
+    assert_eq!(overlap, upper_only);
+    assert_eq!(server.form(21).expect("lower form").visible_area, 0);
+    assert_eq!(server.form(21).expect("lower form").occluded_by, Some(22));
+}
+
+#[test]
 fn unmapped_form_does_not_appear_in_manifest_buffer() {
     let mut server = ServerState::new();
 

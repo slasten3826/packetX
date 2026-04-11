@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::server::{FormAssembly, PacketAtom, PacketStatus, ServerState};
 
-pub const DEFAULT_OUTPUT_WIDTH: u16 = 1920;
-pub const DEFAULT_OUTPUT_HEIGHT: u16 = 1080;
+pub const DEFAULT_OUTPUT_WIDTH: u16 = 256;
+pub const DEFAULT_OUTPUT_HEIGHT: u16 = 144;
 const MANIFEST_BACKGROUND: u32 = 0xff10_1010;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,7 +126,11 @@ impl ManifestState {
 
     pub fn render_server_state(&mut self, server: &ServerState) {
         self.back.clear(MANIFEST_BACKGROUND);
-        for form in server.forms.iter().filter(|form| form.mapped) {
+        for form in server
+            .forms
+            .iter()
+            .filter(|form| form.mapped && form.visible)
+        {
             self.back.blit_form(form, color_for_form(form.id));
         }
         self.damage = diff_damage(&self.front, &self.back);
@@ -142,7 +146,11 @@ pub fn render_manifest_buffer(
     let mut buffer = ManifestBuffer::new(width, height);
     buffer.clear(MANIFEST_BACKGROUND);
 
-    for form in server.forms.iter().filter(|form| form.mapped) {
+    for form in server
+        .forms
+        .iter()
+        .filter(|form| form.mapped && form.visible)
+    {
         buffer.blit_form(form, color_for_form(form.id));
     }
 
@@ -150,7 +158,11 @@ pub fn render_manifest_buffer(
 }
 
 pub fn emit_snapshot(server: &mut ServerState, packet: &mut PacketAtom) -> String {
-    let composited = server.forms.iter().filter(|form| form.mapped).count();
+    let composited = server
+        .forms
+        .iter()
+        .filter(|form| form.mapped && form.visible)
+        .count();
     let mut manifest_state = mem::replace(
         &mut server.manifest_state,
         ManifestState::new(DEFAULT_OUTPUT_WIDTH, DEFAULT_OUTPUT_HEIGHT),
@@ -169,7 +181,7 @@ pub fn emit_snapshot(server: &mut ServerState, packet: &mut PacketAtom) -> Strin
     } else {
         packet.status = PacketStatus::Manifested;
         packet.log_ledger.push(format!(
-            "manifest: composited {} mapped forms into {}x{} software buffer",
+            "manifest: composited {} visible forms into {}x{} software buffer",
             composited, output_width, output_height
         ));
     }
