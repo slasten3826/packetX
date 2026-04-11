@@ -141,12 +141,17 @@ impl ServerState {
         self.clients.get(&session_id)
     }
 
+    pub fn mark_manifest_dirty(&mut self) {
+        self.manifest_state.mark_dirty();
+    }
+
     pub fn cleanup_session(&mut self, session_id: u64) {
         self.clients.remove(&session_id);
         self.forms.retain(|form| form.owner_session_id != session_id);
         for (stacking_rank, form) in self.forms.iter_mut().enumerate() {
             form.stacking_rank = stacking_rank;
         }
+        self.mark_manifest_dirty();
     }
 
     pub fn total_area(&self) -> u32 {

@@ -1,7 +1,7 @@
 use x12_server::compat::x11::X11Request;
 use x12_server::manifest::{render_manifest_buffer, ManifestBuffer};
 use x12_server::process_request;
-use x12_server::server::ServerState;
+use x12_server::server::{PacketAtom, PacketOrigin, ProcessKind, ServerState};
 
 fn run(server: &mut ServerState, request: &X11Request) {
     let _ = process_request(server, request);
@@ -47,7 +47,7 @@ fn single_mapped_form_appears_in_manifest_buffer() {
     );
     run(&mut server, &X11Request::MapWindow { id: 1 });
 
-    let buffer = render_manifest_buffer(&server, 16, 16);
+    let buffer = render_manifest_buffer(&server.forms, 16, 16);
     let inside = buffer.get_pixel(2, 3).expect("inside pixel should exist");
     let outside = buffer.get_pixel(0, 0).expect("background pixel should exist");
 
@@ -85,7 +85,7 @@ fn upper_form_overwrites_lower_in_overlap_region() {
     );
     run(&mut server, &X11Request::MapWindow { id: 2 });
 
-    let buffer = render_manifest_buffer(&server, 16, 16);
+    let buffer = render_manifest_buffer(&server.forms, 16, 16);
     let lower_only = buffer.get_pixel(1, 1).expect("lower-only pixel should exist");
     let overlap = buffer.get_pixel(3, 3).expect("overlap pixel should exist");
     let upper_only = buffer.get_pixel(5, 5).expect("upper-only pixel should exist");
@@ -123,7 +123,7 @@ fn fully_occluded_form_is_not_composited_into_manifest_buffer() {
     );
     run(&mut server, &X11Request::MapWindow { id: 22 });
 
-    let buffer = render_manifest_buffer(&server, 16, 16);
+    let buffer = render_manifest_buffer(&server.forms, 16, 16);
     let overlap = buffer.get_pixel(2, 2).expect("overlap pixel should exist");
     let upper_only = render_manifest_buffer(&{
         let mut isolated = ServerState::new();
@@ -139,7 +139,7 @@ fn fully_occluded_form_is_not_composited_into_manifest_buffer() {
             },
         );
         run(&mut isolated, &X11Request::MapWindow { id: 22 });
-        isolated
+        isolated.forms
     }, 16, 16)
     .get_pixel(2, 2)
     .expect("upper-only pixel should exist");
@@ -165,7 +165,7 @@ fn unmapped_form_does_not_appear_in_manifest_buffer() {
         },
     );
 
-    let buffer = render_manifest_buffer(&server, 16, 16);
+    let buffer = render_manifest_buffer(&server.forms, 16, 16);
     let background = buffer.get_pixel(0, 0).expect("background pixel should exist");
 
     assert_eq!(buffer.get_pixel(2, 2), Some(background));
@@ -262,6 +262,97 @@ fn manifest_skips_damage_diff_on_clean_state() {
             x12_server::server::PacketOrigin::X11Client,
             x12_server::server::ProcessKind::Scene,
         ),
+    );
+
+    assert!(server.manifest_state.damage().is_empty());
+}
+
+#[test]
+fn cleanup_session_marks_manifest_dirty_and_clears_removed_form() {
+    let mut server = ServerState::new();
+    assert!(server.register_client(41, 0x0520_0000, 0x001f_ffff));
+
+    let _ = x12_server::process_request_for_session(
+        &mut server,
+        41,
+        &X11Request::CreateWindow {
+            id: 0x0520_004d,
+            parent: 1,
+            x: 3,
+            y: 3,
+            width: 5,
+            height: 5,
+        },
+    );
+    let _ = x12_server::process_request_for_session(
+        &mut server,
+        41,
+        &X11Request::MapWindow { id: 0x0520_004d },
+    );
+    assert_eq!(server.manifest_state.damage().len(), 1);
+
+    let _ = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut PacketAtom::new(1001, 1001, PacketOrigin::X11Client, ProcessKind::Scene),
+    );
+    assert!(server.manifest_state.damage().is_empty());
+
+    server.cleanup_session(41);
+
+    let snapshot = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut PacketAtom::new(1002, 1002, PacketOrigin::X11Client, ProcessKind::Scene),
+    );
+
+    assert!(snapshot.contains("damage_rects: 1"));
+    let background = server
+        .manifest_state
+        .front()
+        .get_pixel(3, 3)
+        .expect("background pixel should exist after cleanup");
+    assert_eq!(server.forms.len(), 0);
+    assert_eq!(background, server.manifest_state.front().get_pixel(0, 0).unwrap());
+}
+
+#[test]
+fn killed_packet_snapshot_clears_manifest_dirty_state() {
+    let mut server = ServerState::new();
+    assert!(server.register_client(51, 0x0660_0000, 0x001f_ffff));
+    assert!(server.register_client(52, 0x0680_0000, 0x001f_ffff));
+
+    let _ = x12_server::process_request_for_session(
+        &mut server,
+        51,
+        &X11Request::CreateWindow {
+            id: 0x0660_004d,
+            parent: 1,
+            x: 4,
+            y: 4,
+            width: 6,
+            height: 6,
+        },
+    );
+    let _ = x12_server::process_request_for_session(
+        &mut server,
+        51,
+        &X11Request::MapWindow { id: 0x0660_004d },
+    );
+    let _ = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut PacketAtom::new(1101, 1101, PacketOrigin::X11Client, ProcessKind::Scene),
+    );
+    assert!(server.manifest_state.damage().is_empty());
+
+    let _ = x12_server::process_request_for_session(
+        &mut server,
+        52,
+        &X11Request::ConfigureWindow {
+            id: 0x0660_004d,
+            x: Some(20),
+            y: None,
+            width: None,
+            height: None,
+        },
     );
 
     assert!(server.manifest_state.damage().is_empty());

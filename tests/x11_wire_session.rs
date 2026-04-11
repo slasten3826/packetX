@@ -245,6 +245,7 @@ fn cleanup_session_removes_client_and_owned_forms() {
             height: 100,
         },
     );
+    let _ = process_request_for_session(&mut server, 11, &X11Request::MapWindow { id: 0x0160_004d });
     let _ = process_request_for_session(
         &mut server,
         12,
@@ -257,6 +258,17 @@ fn cleanup_session_removes_client_and_owned_forms() {
             height: 120,
         },
     );
+    let _ = process_request_for_session(&mut server, 12, &X11Request::MapWindow { id: 0x0180_004d });
+
+    let _ = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut x12_server::server::PacketAtom::new(
+            1200,
+            1200,
+            x12_server::server::PacketOrigin::X11Client,
+            x12_server::server::ProcessKind::Scene,
+        ),
+    );
 
     server.cleanup_session(11);
 
@@ -266,6 +278,18 @@ fn cleanup_session_removes_client_and_owned_forms() {
     assert!(server.form(0x0180_004d).is_some());
     assert_eq!(server.forms.len(), 1);
     assert_eq!(server.form(0x0180_004d).expect("remaining form").stacking_rank, 0);
+
+    let snapshot = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut x12_server::server::PacketAtom::new(
+            1201,
+            1201,
+            x12_server::server::PacketOrigin::X11Client,
+            x12_server::server::ProcessKind::Scene,
+        ),
+    );
+
+    assert!(snapshot.contains("damage_rects: 1"));
 }
 
 #[test]

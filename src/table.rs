@@ -35,7 +35,7 @@ pub fn apply_request(
             packet
                 .log_ledger
                 .push(format!("table: create form claim id={id}"));
-            server.manifest_state.mark_dirty();
+            server.mark_manifest_dirty();
             packet.status = PacketStatus::Tabled;
         }
         X11Request::MapWindow { id } => {
@@ -49,7 +49,7 @@ pub fn apply_request(
                 } else {
                     form.mapped = true;
                     packet.log_ledger.push(format!("table: map request id={id}"));
-                    server.manifest_state.mark_dirty();
+                    server.mark_manifest_dirty();
                     packet.status = PacketStatus::Tabled;
                 }
             } else {
@@ -90,7 +90,7 @@ pub fn apply_request(
                     packet
                         .log_ledger
                         .push(format!("table: configure form id={id}"));
-                    server.manifest_state.mark_dirty();
+                    server.mark_manifest_dirty();
                     packet.status = PacketStatus::Tabled;
                 }
             } else {
@@ -114,7 +114,7 @@ pub fn apply_request(
                     form.occluded_by = None;
                     form.visible_area = 0;
                     packet.log_ledger.push(format!("table: unmap form id={id}"));
-                    server.manifest_state.mark_dirty();
+                    server.mark_manifest_dirty();
                     packet.status = PacketStatus::Tabled;
                 }
             } else {

@@ -133,7 +133,7 @@ impl ManifestState {
         }
 
         self.back.clear(MANIFEST_BACKGROUND);
-        for form in forms.iter().filter(|form| form.mapped && form.visible) {
+        for form in forms.iter().filter(|form| contributes_to_manifest(form)) {
             self.back.blit_form(form, color_for_form(form.id));
         }
         self.damage = diff_damage(&self.front, &self.back);
@@ -142,19 +142,19 @@ impl ManifestState {
     }
 }
 
+fn contributes_to_manifest(form: &FormAssembly) -> bool {
+    form.mapped && form.visible
+}
+
 pub fn render_manifest_buffer(
-    server: &ServerState,
+    forms: &[FormAssembly],
     width: u16,
     height: u16,
 ) -> ManifestBuffer {
     let mut buffer = ManifestBuffer::new(width, height);
     buffer.clear(MANIFEST_BACKGROUND);
 
-    for form in server
-        .forms
-        .iter()
-        .filter(|form| form.mapped && form.visible)
-    {
+    for form in forms.iter().filter(|form| contributes_to_manifest(form)) {
         buffer.blit_form(form, color_for_form(form.id));
     }
 
@@ -165,7 +165,7 @@ pub fn emit_snapshot(server: &mut ServerState, packet: &mut PacketAtom) -> Strin
     let composited = server
         .forms
         .iter()
-        .filter(|form| form.mapped && form.visible)
+        .filter(|form| contributes_to_manifest(form))
         .count();
     server.manifest_state.render_forms(&server.forms);
     let damage = server.manifest_state.damage().to_vec();
