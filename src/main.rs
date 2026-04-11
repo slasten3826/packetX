@@ -1,10 +1,18 @@
+use std::fs;
+use std::path::PathBuf;
+
 use x12_server::compat::x11::X11Bridge;
 use x12_server::compat::x11::scenarios;
 use x12_server::compat::x11_wire::X11WireServer;
-use x12_server::run_sequence;
+use x12_server::manifest::dump_front_buffer_ppm;
+use x12_server::process_request;
+use x12_server::server::ServerState;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let ppm_dir = args
+        .windows(2)
+        .find_map(|window| (window[0] == "--dump-ppm-dir").then_some(PathBuf::from(&window[1])));
 
     if args.iter().any(|arg| arg == "--list-scenarios") {
         println!("available scenarios:");
@@ -142,7 +150,27 @@ fn main() {
         bridge.bootstrap_sequence()
     };
 
-    for snapshot in run_sequence(&requests) {
+    if let Some(dir) = ppm_dir {
+        if let Err(err) = fs::create_dir_all(&dir) {
+            eprintln!("failed to create PPM output directory {}: {err}", dir.display());
+            std::process::exit(1);
+        }
+
+        let mut server = ServerState::new();
+        for (index, request) in requests.iter().enumerate() {
+            let snapshot = process_request(&mut server, request);
+            println!("{snapshot}");
+
+            let path = dir.join(format!("frame-{index:03}.ppm"));
+            if let Err(err) = dump_front_buffer_ppm(&server, &path) {
+                eprintln!("failed to write PPM frame {}: {err}", path.display());
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    for snapshot in x12_server::run_sequence(&requests) {
         println!("{snapshot}");
     }
 }

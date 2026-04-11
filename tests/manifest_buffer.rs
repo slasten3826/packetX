@@ -19,6 +19,20 @@ fn manifest_buffer_dimensions_are_preserved() {
 }
 
 #[test]
+fn manifest_buffer_encodes_valid_ppm_header_and_rgb_payload() {
+    let mut buffer = ManifestBuffer::new(2, 1);
+    buffer.clear(0);
+    buffer.fill_rect(0, 0, 1, 1, 0xff11_2233);
+    buffer.fill_rect(1, 0, 1, 1, 0xff44_5566);
+
+    let ppm = buffer.encode_ppm();
+    let header = b"P6\n2 1\n255\n";
+
+    assert!(ppm.starts_with(header));
+    assert_eq!(&ppm[header.len()..], &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+}
+
+#[test]
 fn fill_rect_is_clipped_to_buffer_bounds() {
     let mut buffer = ManifestBuffer::new(4, 4);
     buffer.clear(0);

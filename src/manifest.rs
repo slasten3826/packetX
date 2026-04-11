@@ -1,4 +1,7 @@
+use std::fs;
+use std::io;
 use std::mem;
+use std::path::Path;
 
 use crate::server::{FormAssembly, PacketAtom, PacketStatus, ServerState};
 
@@ -57,6 +60,22 @@ impl ManifestBuffer {
         self.pixels.fill(color);
     }
 
+    pub fn encode_ppm(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(32 + self.pixels.len() * 3);
+        out.extend_from_slice(format!("P6\n{} {}\n255\n", self.width, self.height).as_bytes());
+        for pixel in &self.pixels {
+            let r = ((pixel >> 16) & 0xff) as u8;
+            let g = ((pixel >> 8) & 0xff) as u8;
+            let b = (pixel & 0xff) as u8;
+            out.extend_from_slice(&[r, g, b]);
+        }
+        out
+    }
+
+    pub fn write_ppm<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        fs::write(path, self.encode_ppm())
+    }
+
     pub fn get_pixel(&self, x: u16, y: u16) -> Option<u32> {
         if x >= self.width || y >= self.height {
             return None;
@@ -102,6 +121,10 @@ impl ManifestBuffer {
             Some((left as u16, top as u16, right as u16, bottom as u16))
         }
     }
+}
+
+pub fn dump_front_buffer_ppm<P: AsRef<Path>>(server: &ServerState, path: P) -> io::Result<()> {
+    server.manifest_state.front().write_ppm(path)
 }
 
 impl ManifestState {
