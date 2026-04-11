@@ -4,8 +4,9 @@
 
 Этот документ фиксирует сильную рабочую гипотезу:
 
-- `chaos` и `table` лучше читать как server-side слои
-- `crystall` и `manifest` лучше читать как client-near слои
+- `chaos` и `table` лучше читать как server-sovereign слои
+- `crystall` и `manifest` лучше читать как
+  `client-informed, server-controlled` слои
 
 Это не отменяет того,
 что `X12` в целом остается server-shaped системой.
@@ -15,12 +16,12 @@
 
 ## Главная формула
 
-### Server side
+### Server-sovereign
 
 - `chaos`
 - `table`
 
-### Client-near side
+### Client-informed, server-controlled
 
 - `crystall`
 - `manifest`
@@ -54,7 +55,7 @@
 
 Это очень серверная truth.
 
-## Почему `crystall` client-near
+## Почему `crystall` client-informed, server-controlled
 
 `crystall` ближе к:
 
@@ -67,11 +68,19 @@
 Серверу не обязательно знать,
 что у окна красивая тень или сложный внутренний shape.
 
-Это уже ближе к клиентской стороне проявления.
+Но это не делает `crystall`
+клиентским сувереном.
 
-## Почему `manifest` client-near
+Более точное чтение:
 
-`manifest` тоже ближе к клиентской стороне,
+- клиент информирует `crystall`
+  о visual detail и content shape
+- сервер все равно контролирует
+  visibility truth и final legality
+
+## Почему `manifest` client-informed, server-controlled
+
+`manifest` тоже связан с клиентской стороной,
 потому что он связан с:
 
 - final visual realization
@@ -79,13 +88,29 @@
 - concrete output surface
 - тем, как форма реально выглядит на выходе
 
-Но это не значит,
-что `manifest` становится полностью client-sovereign.
+Но здесь особенно важно не уйти в ложную формулировку.
+
+`manifest` не должен читаться как client-controlled,
+потому что:
+
+- scanout
+- page flip
+- output commit
+- владение тем, что физически видно на мониторе
+
+для `X12` остаются server operations.
+
+Поэтому:
+
+- клиент может информировать `manifest`
+  о content changes / dirty regions / visual surface
+- но final output commit остается server-controlled
 
 ## Важное ограничение
 
 Несмотря на то, что
-`crystall` и `manifest` читаются как client-near,
+`crystall` и `manifest` читаются как
+client-informed,
 `X12` все равно остается сервером.
 
 Значит:
@@ -98,7 +123,7 @@
 
 То есть:
 
-- client-near != client-sovereign
+- client-informed != client-controlled
 
 ## Что это дает
 
@@ -112,7 +137,7 @@
 - какие claims legal
 - какие packet-path вообще допустимы
 
-### Клиент знает
+### Клиент знает / сообщает
 
 - как его форма реально выглядит
 - что внутри формы изменилось
@@ -135,7 +160,7 @@
 - topology changes
 - legality changes
 
-### Client-driven part
+### Client-informed part
 
 Через `crystall` и `manifest`:
 
@@ -159,8 +184,42 @@
 А так:
 
 - сервер держит структуру мира
-- клиент держит форму и проявление
+- клиент информирует систему о своей форме и содержимом
 - сервер все равно сохраняет final boundary authority
+
+## Уточнение про `crystall policy`
+
+Здесь есть отдельная важная развилка.
+
+Надо различать:
+
+- `crystall core`
+- `crystall policy`
+
+### `crystall core`
+
+Это server-controlled часть:
+
+- visibility filter
+- overlap resolution
+- packet-pressure filtering
+- final visual legality
+
+### `crystall policy`
+
+Это уже можно читать как
+privileged client logic:
+
+- WM-like decisions
+- raise / lower intentions
+- focus-related policy
+- visual policy hints
+
+Но такая policy не должна менять server truth напрямую.
+
+Она должна производить intention / request,
+который потом проходит через server path
+и валидируется в `table`.
 
 ## Открытые вопросы
 
@@ -169,18 +228,20 @@
 
 Надо отдельно думать:
 
-- насколько буквально `manifest` должен быть client-near
+- насколько буквально `manifest` должен быть
+  client-informed, а не client-controlled
 - где проходит граница между `crystall` и `manifest`
 - как это ляжет на real Linux output path
 - что именно server final authority будет означать
-  для client-near manifest
+  для client-informed manifest
 
 ## Текущий вывод
 
 Рабочая гипотеза сейчас такая:
 
-- `chaos` + `table` = server core
-- `crystall` + `manifest` = client-near realization
+- `chaos` + `table` = server-sovereign core
+- `crystall` + `manifest` = client-informed,
+  но server-controlled realization
 
 И это выглядит чище,
 чем пытаться делить authority

@@ -84,6 +84,11 @@
 - `manifest` должен быть почти тупым output layer
 - или он имеет право делать last-mile decisions
 
+Но уже можно зафиксировать одну жесткую границу:
+
+- даже если `manifest` informed клиентом,
+  output commit для `X12` остается server-controlled
+
 Например:
 
 - снизить throughput
@@ -132,6 +137,13 @@ pressure и output degradation.
 > какой minimal physical contract
 > нужен `manifest` от Linux lower boundary
 
+И здесь важно не спутать:
+
+- клиент может информировать `manifest`
+  о content / dirty state
+- но lower-boundary contract с Linux hardware
+  остается server-side responsibility
+
 ## Open Question 7
 
 ### Является ли `manifest` ближе к монитору,
@@ -161,6 +173,22 @@ pressure и output degradation.
 - что это не "весь мир графики",
   а только lower boundary manifest
 - чего мы пока о нем не знаем
+
+## Open Question 9
+
+### Как соотносится `crystall policy` и server truth
+
+Если visual/WM-like policy живет рядом с `crystall`,
+то надо отдельно понять:
+
+- это часть server core
+- или privileged client logic
+
+Сильный текущий кандидат:
+
+- `crystall core` = server-controlled
+- `crystall policy` = privileged client,
+  который посылает intention в server path
 
 ## Коротко
 

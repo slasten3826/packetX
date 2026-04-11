@@ -130,6 +130,13 @@ packet-онтология `X12` все равно может быть
 Он получает уже подготовленную к проявлению
 структуру и ведет actual output flow.
 
+Но при этом для `X12` важно:
+
+- `manifest` может быть informed клиентом
+  о surface/content changes
+- но final output commit остается
+  server-controlled
+
 ## Короткая формула
 
 Не так:
