@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::manifest::{ManifestState, DEFAULT_OUTPUT_HEIGHT, DEFAULT_OUTPUT_WIDTH};
+
 #[derive(Debug, Clone, Copy)]
 pub enum PacketOrigin {
     X11Client,
@@ -73,6 +75,7 @@ pub struct ServerState {
     next_packet: u64,
     pub forms: Vec<FormAssembly>,
     pub clients: HashMap<u64, ServerClient>,
+    pub manifest_state: ManifestState,
 }
 
 impl ServerState {
@@ -82,6 +85,7 @@ impl ServerState {
             next_packet: 1,
             forms: Vec::new(),
             clients: HashMap::new(),
+            manifest_state: ManifestState::new(DEFAULT_OUTPUT_WIDTH, DEFAULT_OUTPUT_HEIGHT),
         }
     }
 
