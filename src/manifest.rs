@@ -23,11 +23,10 @@ pub struct DamageRect {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManifestState {
-    width: u16,
-    height: u16,
     front: ManifestBuffer,
     back: ManifestBuffer,
     damage: Vec<DamageRect>,
+    dirty: bool,
 }
 
 impl Default for ManifestState {
@@ -108,11 +107,10 @@ impl ManifestBuffer {
 impl ManifestState {
     pub fn new(width: u16, height: u16) -> Self {
         Self {
-            width,
-            height,
             front: ManifestBuffer::new(width, height),
             back: ManifestBuffer::new(width, height),
             damage: Vec::new(),
+            dirty: true,
         }
     }
 
@@ -124,17 +122,23 @@ impl ManifestState {
         &self.damage
     }
 
-    pub fn render_server_state(&mut self, server: &ServerState) {
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    pub fn render_forms(&mut self, forms: &[FormAssembly]) {
+        if !self.dirty {
+            self.damage.clear();
+            return;
+        }
+
         self.back.clear(MANIFEST_BACKGROUND);
-        for form in server
-            .forms
-            .iter()
-            .filter(|form| form.mapped && form.visible)
-        {
+        for form in forms.iter().filter(|form| form.mapped && form.visible) {
             self.back.blit_form(form, color_for_form(form.id));
         }
         self.damage = diff_damage(&self.front, &self.back);
         mem::swap(&mut self.front, &mut self.back);
+        self.dirty = false;
     }
 }
 
@@ -163,15 +167,10 @@ pub fn emit_snapshot(server: &mut ServerState, packet: &mut PacketAtom) -> Strin
         .iter()
         .filter(|form| form.mapped && form.visible)
         .count();
-    let mut manifest_state = mem::replace(
-        &mut server.manifest_state,
-        ManifestState::new(DEFAULT_OUTPUT_WIDTH, DEFAULT_OUTPUT_HEIGHT),
-    );
-    manifest_state.render_server_state(server);
-    let damage = manifest_state.damage().to_vec();
-    let output_width = manifest_state.front().width();
-    let output_height = manifest_state.front().height();
-    server.manifest_state = manifest_state;
+    server.manifest_state.render_forms(&server.forms);
+    let damage = server.manifest_state.damage().to_vec();
+    let output_width = server.manifest_state.front().width();
+    let output_height = server.manifest_state.front().height();
 
     if matches!(packet.status, PacketStatus::Killed) {
         packet.log_ledger.push(format!(

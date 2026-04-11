@@ -235,3 +235,34 @@ fn manifest_front_buffer_returns_to_background_after_unmap() {
     assert_eq!(cleared, background);
     assert_eq!(server.manifest_state.damage().len(), 1);
 }
+
+#[test]
+fn manifest_skips_damage_diff_on_clean_state() {
+    let mut server = ServerState::new();
+
+    run(
+        &mut server,
+        &X11Request::CreateWindow {
+            id: 13,
+            parent: 0,
+            x: 2,
+            y: 2,
+            width: 3,
+            height: 3,
+        },
+    );
+    run(&mut server, &X11Request::MapWindow { id: 13 });
+    assert_eq!(server.manifest_state.damage().len(), 1);
+
+    let _ = x12_server::manifest::emit_snapshot(
+        &mut server,
+        &mut x12_server::server::PacketAtom::new(
+            999,
+            999,
+            x12_server::server::PacketOrigin::X11Client,
+            x12_server::server::ProcessKind::Scene,
+        ),
+    );
+
+    assert!(server.manifest_state.damage().is_empty());
+}
